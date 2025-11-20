@@ -1,0 +1,5 @@
+{
+  "name": "FinDash - Market Leverage Analyzer",
+  "description": "A professional financial dashboard analyzing market leverage, risk ratios, and interest costs using mock market data from 2010-2025.",
+  "requestFramePermissions": []
+}
