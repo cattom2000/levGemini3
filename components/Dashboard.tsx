@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { MarketDataPoint, DashboardMetrics, FilterState } from '../types';
+import { ProcessedDataPoint, DashboardMetrics, FilterState } from '../types';
 import { KPICard } from './KPICard';
 import { ChartContainer } from './charts/ChartContainer';
 import {
@@ -8,7 +8,7 @@ import {
 } from 'recharts';
 
 interface DashboardProps {
-  data: MarketDataPoint[];
+  data: ProcessedDataPoint[];
   metrics: DashboardMetrics;
   filters: FilterState;
 }
@@ -70,7 +70,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, metrics, filters }) 
 
   return (
     <div className="flex-1 p-8 bg-fin-gray overflow-y-auto h-screen ml-72">
-      
+
       {/* --- KPI Header --- */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
         
@@ -288,8 +288,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, metrics, filters }) 
         <p className="font-bold">Data Sources</p>
         <p>FINRA (Margin Debt), FRED (M2, Fed Funds), Yahoo Finance (S&P 500, VIX)</p>
         <p className="mt-2 font-bold">Scope</p>
-        <p>Data Range: 2010–2025. Metrics calculated based on levRedo technical documentation.</p>
-        <p className="mt-2 text-xs text-blue-600 italic">*Note: Due to environment restrictions, this dashboard is running on generated mock data closely mirroring historical trends.</p>
+        <p>Data Range: 2010–2025 (188 data points). Metrics calculated based on levRedo technical documentation.</p>
+        <p className="mt-2 text-xs text-blue-600 italic">*Note: This dashboard is running on real market data from market_data.csv (2010-02 to 2025-09).</p>
       </div>
 
     </div>

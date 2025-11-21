@@ -1,94 +1,27 @@
-import { MarketDataPoint, DashboardMetrics } from '../types';
+// services/dataService.ts
+import { ProcessedDataPoint, DashboardMetrics } from '../types';
+import { rawMarketData } from '../data/marketData';
+import { processFinancialData, calculatePercentageChange } from '../utils/financialCalculations';
 
-// Helper to format date
-const formatDate = (date: Date): string => {
-  return date.toISOString().split('T')[0];
+/**
+ * Retrieves and processes the financial data.
+ * This function serves as the main data provider for the application.
+ * @returns An array of fully processed data points.
+ */
+export const getProcessedData = (): ProcessedDataPoint[] => {
+  // In a real app, this might fetch from an API. Here, we process the static raw data.
+  // The z-score window from the original spec was 252 (daily), which is too large for monthly data.
+  // We'll use a more appropriate window, like 12 months.
+  const processed = processFinancialData(rawMarketData, 12);
+  return processed;
 };
 
-// Generate Synthetic Data (2010 - 2025)
-export const generateMarketData = (): MarketDataPoint[] => {
-  const data: MarketDataPoint[] = [];
-  let currentDate = new Date('2010-01-01');
-  const endDate = new Date('2025-12-31');
-
-  // Initial Values
-  let sp500 = 1100;
-  let finraD = 250; // Billions
-  let m2 = 8500; // Billions
-  let netWorth = 1000; 
-
-  while (currentDate <= endDate) {
-    const dateStr = formatDate(currentDate);
-    
-    // Random Walk Factors
-    const monthFactor = 1 + (Math.random() * 0.04 - 0.015); // Generally up
-    const vixBase = 15 + (Math.random() * 10 - 2);
-    
-    // Simulate Events
-    const year = currentDate.getFullYear();
-    let shock = 1.0;
-    let fedRate = 0.25;
-
-    if (year >= 2016 && year < 2019) fedRate = 1.5 + Math.random();
-    if (year === 2020) { shock = 0.7; fedRate = 0.1; } // Covid
-    if (year >= 2022) fedRate = 4.5 + (Math.random() * 1); // Inflation
-
-    // Update Core Values
-    sp500 = sp500 * monthFactor * (year === 2020 && currentDate.getMonth() === 2 ? 0.8 : 1);
-    finraD = finraD * monthFactor * (year === 2020 && currentDate.getMonth() === 2 ? 0.9 : 1);
-    m2 = m2 * 1.005; // Steady growth
-    
-    // Derived Calc
-    const marketCap = sp500 * 400 / 1000; // In Billions (approx scale down for visual ratio)
-    const leverageRatio = finraD / (marketCap * 1000); // Scaled for display (0.02 - 0.05 range typically)
-    const moneySupplyRatio = finraD / m2;
-    const interestCost = finraD * (fedRate / 100);
-    
-    // Volatility correlates inversely with market usually
-    const vix = (year === 2020 && currentDate.getMonth() === 2) ? 60 : vixBase - (monthFactor > 1.01 ? 2 : -2);
-
-    // Net worth (Simulated accumulator)
-    netWorth = netWorth * (1 + (monthFactor - 1) * 1.2); // 1.2x leverage beta
-
-    // Vulnerability: High leverage + High VIX = Danger
-    const vulnIndex = (leverageRatio * 100) * (vix / 10);
-
-    data.push({
-      date: dateStr,
-      timestamp: currentDate.getTime(),
-      finra_D: parseFloat(finraD.toFixed(2)),
-      vix_index: parseFloat(vix.toFixed(2)),
-      sp500_index: parseFloat(sp500.toFixed(2)),
-      m2_money_supply: parseFloat(m2.toFixed(2)),
-      federal_funds_rate: parseFloat(fedRate.toFixed(2)),
-      market_cap: parseFloat(marketCap.toFixed(2)),
-      market_leverage_ratio: parseFloat(leverageRatio.toFixed(4)),
-      money_supply_ratio: parseFloat(moneySupplyRatio.toFixed(4)),
-      annual_interest_cost: parseFloat(interestCost.toFixed(2)),
-      leverage_change_mom: 0, // Calculated next pass
-      leverage_change_yoy: 0, // Calculated next pass
-      investor_net_worth: parseFloat(netWorth.toFixed(2)),
-      vulnerability_index: parseFloat(vulnIndex.toFixed(2))
-    });
-
-    // Next Month
-    currentDate.setMonth(currentDate.getMonth() + 1);
-  }
-
-  // Second pass for change rates
-  for (let i = 0; i < data.length; i++) {
-    if (i > 0) {
-      data[i].leverage_change_mom = (data[i].market_leverage_ratio - data[i-1].market_leverage_ratio) / data[i-1].market_leverage_ratio;
-    }
-    if (i > 11) {
-      data[i].leverage_change_yoy = (data[i].market_leverage_ratio - data[i-12].market_leverage_ratio) / data[i-12].market_leverage_ratio;
-    }
-  }
-
-  return data;
-};
-
-export const calculateMetrics = (data: MarketDataPoint[]): DashboardMetrics => {
+/**
+ * Calculates high-level summary metrics for the dashboard's KPI cards to match the UI's expectations.
+ * @param data - An array of processed data points from the current filter range.
+ * @returns An object containing the calculated dashboard metrics.
+ */
+export const calculateMetrics = (data: ProcessedDataPoint[]): DashboardMetrics => {
   if (data.length === 0) {
     return {
       avgMarketLeverage: 0,
@@ -103,7 +36,10 @@ export const calculateMetrics = (data: MarketDataPoint[]): DashboardMetrics => {
 
   const last12 = data.slice(-12);
   const lastPt = data[data.length - 1];
-  const oneYearAgoPt = data[data.length - 13] || data[0];
+  // For YoY calculation, we need a point from 12 months prior to the last point in the *filtered* data.
+  // This requires finding that point in the full dataset, which we don't have here.
+  // As a robust fallback, we use the first point of the filtered data if it's over a year long.
+  const oneYearAgoPt = data.length > 12 ? data[data.length - 13] : data[0];
 
   const avgLev = data.reduce((acc, curr) => acc + curr.market_leverage_ratio, 0) / data.length;
   const avgM2 = data.reduce((acc, curr) => acc + curr.money_supply_ratio, 0) / data.length;
@@ -111,15 +47,19 @@ export const calculateMetrics = (data: MarketDataPoint[]): DashboardMetrics => {
   const avgVix = data.reduce((acc, curr) => acc + curr.vix_index, 0) / data.length;
   const avgFed = data.reduce((acc, curr) => acc + curr.federal_funds_rate, 0) / data.length;
 
-  const sp500Growth = (lastPt.sp500_index - oneYearAgoPt.sp500_index) / oneYearAgoPt.sp500_index;
+  // The UI expects the sum of the last 12 months of interest cost, and the value is in thousands, so we divide by 1B to get billions
+  const totalInterestCost12M = last12.reduce((acc, curr) => acc + curr.annual_interest_cost, 0) / 1000000;
+
+  const sp500Growth = calculatePercentageChange(lastPt.sp500_index, oneYearAgoPt.sp500_index);
 
   return {
     avgMarketLeverage: avgLev,
     avgMoneySupplyRatio: avgM2,
-    currentAnnualInterestCost: last12.reduce((acc, curr) => acc + curr.annual_interest_cost, 0),
+    currentAnnualInterestCost: totalInterestCost12M,
     avgVulnerabilityIndex1Y: avgVuln,
     sp500YoY: sp500Growth,
     avgVix: avgVix,
     avgFedRate: avgFed,
   };
 };
+
